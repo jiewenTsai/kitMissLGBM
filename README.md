@@ -16,13 +16,32 @@ KIT 風格 [Shiny for Python](https://shiny.posit.co/py/) 應用，整合 **FLAM
 
 ---
 
-## 快速開始（從 GitHub 取得）
+## 使用：快速開始（從 GitHub 取得）
+
+### For Windows 
 
 最簡單的方法 (only for windows)
 
 1. 從右邊 `Releases` 位置下載 zip，到本機上解壓縮。 
 2. 進去後直接點擊 `run.bat` 執行即可。
 
+### For Mac/Linux/Win 
+
+都在終端機 terminal 上操作。 
+
+1. 安裝套件
+
+```
+git clone https://github.com/jiewenTsai/kitMissLGBM.git
+cd kitMissLGBM
+pip install -r requirements.txt
+```
+
+2. 直接用 python 執行 (請先安裝 python)
+
+```
+python app.py
+```
 
 <img width="1857" height="990" alt="image" src="https://github.com/user-attachments/assets/2845d36c-1489-414c-8aa7-489ba64d0ea6" />
 
