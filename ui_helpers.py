@@ -143,7 +143,9 @@ def progress_bar_ui(phase: str, done: int, total: int, msg: str) -> ui.Tag | Non
 def download_hint() -> ui.Tag:
     """Standard kitMiss download footer hint."""
     return ui.tags.p(
-        "若下載無反應，請改用 Chrome 或檢查瀏覽器是否封鎖下載。",
+        "若下載失敗並顯示「檢查網際網路連線」，通常不是網路問題："
+        "請確認訓練／SHAP 已顯示【成功】、終端機的 app 仍在執行、"
+        "按 F5 重新整理後再下載；連續下載多檔請改用「全部 ZIP」。",
         class_="text-muted",
         style="font-size:0.85rem; margin-top:0.5rem;",
     )

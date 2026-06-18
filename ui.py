@@ -147,7 +147,17 @@ def _tab_shap() -> ui.Tag:
             selected="inherit",
             inline=True,
         ),
-        ui.output_ui("shap_upload_ui"),
+        ui.panel_conditional(
+            "input.model_source === 'external'",
+            ui.div(
+                ui.input_file("model_pkl", "上傳 .pkl 模型檔", accept=[".pkl"]),
+                ui.input_file("shap_csv", "上傳對應資料 CSV", accept=[".csv"]),
+                ui.input_text("shap_target_column", "目標變項欄名", value="attrition"),
+                ui.output_ui("shap_data_summary"),
+                class_="alert alert-info",
+                style="margin-top: 8px;",
+            ),
+        ),
         ui.hr(),
 
         # ── SHAP 參數 ──────────────────────────────────────────

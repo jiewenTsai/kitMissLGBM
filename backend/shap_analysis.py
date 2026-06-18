@@ -31,8 +31,16 @@ def _align_features(model, X: pd.DataFrame) -> pd.DataFrame:
     if expected is None:
         return X
 
-    available = [f for f in expected if f in X.columns]
-    return X[available]
+    missing = [f for f in expected if f not in X.columns]
+    if missing:
+        preview = ", ".join(missing[:5])
+        suffix = "..." if len(missing) > 5 else ""
+        raise ValueError(
+            f"CSV 缺少模型需要的 {len(missing)} 個欄位（例如：{preview}{suffix}）。"
+            "請上傳與訓練時相同特徵欄位的資料。"
+        )
+
+    return X[expected]
 
 
 def run_oof_shap(

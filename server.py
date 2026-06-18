@@ -19,6 +19,7 @@ def server(input, output, session):
     _train_result: reactive.Value[dict | None] = reactive.Value(None)
     _train_status: reactive.Value[str] = reactive.Value("idle")
     _shap_status:  reactive.Value[str] = reactive.Value("idle")
+    _shap_error_msg: reactive.Value[str] = reactive.Value("")
 
     # Thread-safe queues for progress reporting from background threads.
     _train_q: queue.SimpleQueue = queue.SimpleQueue()
@@ -199,13 +200,13 @@ def server(input, output, session):
 
     @render.download(filename=lambda: f"flaml_model_{input.wave_label()}.pkl")
     def dl_model_pkl():
-        r = _train_task.result()
-        return export.model_to_pkl_bytes(r["model"])
+        r = req(_train_result.get())
+        yield export.model_to_pkl_bytes(r["model"])
 
     @render.download(filename="oof_metrics_summary.csv")
     def dl_metrics_csv():
-        r = _train_task.result()
-        return export.df_to_csv_bytes(r["metrics_df"])
+        r = req(_train_result.get())
+        yield export.df_to_csv_bytes(r["metrics_df"])
 
     # ── Task: OOF SHAP ────────────────────────────────────────────────────────
 
@@ -247,12 +248,13 @@ def server(input, output, session):
         _shap_prog.set({"phase": "idle", "done": 0, "total": 0, "msg": ""})
 
         src = input.model_source()
-        target = input.target_column()
+        _shap_error_msg.set("")
 
         if src == "inherit":
             r = _train_result.get()
             if r is None:
                 _shap_status.set("error")
+                _shap_error_msg.set("請先在「模型訓練」分頁完成訓練，或改選「上傳外部 .pkl 模型」。")
                 return
             model, X, y = r["model"], r["X"], r["y"]
         else:
@@ -260,11 +262,20 @@ def server(input, output, session):
             csv_f = input.shap_csv()
             if pkl_f is None or csv_f is None:
                 _shap_status.set("error")
+                _shap_error_msg.set("請同時上傳 .pkl 模型檔與對應 CSV 後再執行。")
                 return
-            model = io_data.load_model_bytes(Path(pkl_f[0]["datapath"]).read_bytes())
-            _, X, y = io_data.load_csv_bytes(
-                Path(csv_f[0]["datapath"]).read_bytes(), target
-            )
+            try:
+                model = io_data.load_model_bytes(
+                    Path(pkl_f[0]["datapath"]).read_bytes()
+                )
+                _, X, y = io_data.load_csv_bytes(
+                    Path(csv_f[0]["datapath"]).read_bytes(),
+                    input.shap_target_column(),
+                )
+            except Exception as e:
+                _shap_status.set("error")
+                _shap_error_msg.set(str(e))
+                return
 
         _shap_status.set("running")
         _shap_task.invoke(
@@ -277,24 +288,40 @@ def server(input, output, session):
 
     @reactive.effect
     def _watch_shap():
-        try:
-            _shap_task.result()
+        status = _shap_task.status()
+        if status == "success":
             _shap_status.set("success")
-        except Exception:
-            pass
-
-    # ── Conditional upload UI ─────────────────────────────────────────────────
+            _shap_error_msg.set("")
+        elif status == "error":
+            _shap_status.set("error")
+            try:
+                _shap_error_msg.set(str(_shap_task.error()))
+            except Exception:
+                _shap_error_msg.set("SHAP 計算失敗，請確認模型與資料相容。")
 
     @render.ui
-    def shap_upload_ui():
-        if input.model_source() == "external":
+    def shap_data_summary():
+        if input.model_source() != "external":
+            return None
+        csv_f = input.shap_csv()
+        if csv_f is None:
+            return None
+        try:
+            csv_bytes = Path(csv_f[0]["datapath"]).read_bytes()
+            df, X, y = io_data.load_csv_bytes(
+                csv_bytes, input.shap_target_column()
+            )
+            n_pos, n_total = int(y.sum()), len(y)
             return ui.div(
-                ui.input_file("model_pkl", "上傳 .pkl 模型檔", accept=[".pkl"]),
-                ui.input_file("shap_csv",  "上傳對應資料 CSV", accept=[".csv"]),
-                class_="alert alert-info",
+                ui.tags.p(f"資料維度：{n_total} 列 × {X.shape[1] + 1} 欄"),
+                ui.tags.p(
+                    f"流失（1）：{n_pos}（{n_pos / n_total:.1%}）　"
+                    f"未流失（0）：{n_total - n_pos}（{(n_total - n_pos) / n_total:.1%}）"
+                ),
                 style="margin-top: 8px;",
             )
-        return None
+        except Exception as e:
+            return status_alert("error", f"資料讀取失敗：{e}")
 
     # ── SHAP render outputs ───────────────────────────────────────────────────
 
@@ -316,11 +343,13 @@ def server(input, output, session):
                 f"{input.shap_n_folds()} folds = {n_total} 折），請稍候...",
             )
         if st == "error":
-            return status_alert(
-                "error",
-                "SHAP 計算失敗，請確認模型與資料相容（欄位順序須一致），"
-                "或先在「模型訓練」分頁完成訓練。",
-            )
+            msg = _shap_error_msg.get()
+            if not msg:
+                msg = (
+                    "SHAP 計算失敗，請確認模型與資料相容（欄位須與訓練時一致），"
+                    "或先在「模型訓練」分頁完成訓練。"
+                )
+            return status_alert("error", msg)
         try:
             r = _shap_task.result()
             n_cum = int((r["shap_df"]["cumulative_pct"] <= r["cum_threshold"]).sum())
@@ -359,42 +388,46 @@ def server(input, output, session):
 
     # ── SHAP downloads ────────────────────────────────────────────────────────
 
+    def _require_shap_result() -> dict:
+        req(_shap_task.status() == "success")
+        return _shap_task.result()
+
     @render.download(filename="shap_importance_all.csv")
     def dl_shap_all_csv():
-        r = _shap_task.result()
-        return export.df_to_csv_bytes(r["shap_df"])
+        r = _require_shap_result()
+        yield export.df_to_csv_bytes(r["shap_df"])
 
     @render.download(filename="selected_variables.csv")
     def dl_shap_sel_csv():
-        r = _shap_task.result()
+        r = _require_shap_result()
         sel = r["shap_df"].loc[
             r["shap_df"]["cumulative_pct"] <= r["cum_threshold"],
             ["rank", "feature"],
         ]
-        return export.df_to_csv_bytes(sel)
+        yield export.df_to_csv_bytes(sel)
 
     @render.download(filename="shap_bar_ci.png")
     def dl_shap_bar_png():
-        r = _shap_task.result()
+        r = _require_shap_result()
         fig = plots.plot_shap_bar_ci(r["shap_df"], r["top_n"])
-        return export.fig_to_png_bytes(fig)
+        yield export.fig_to_png_bytes(fig)
 
     @render.download(filename="shap_beeswarm.png")
     def dl_shap_beeswarm_png():
-        r = _shap_task.result()
+        r = _require_shap_result()
         top_features = r["shap_df"]["feature"].iloc[: r["top_n"]].tolist()
         fig = plots.plot_shap_beeswarm(r["sv_full"], r["X"], top_features, r["top_n"])
-        return export.fig_to_png_bytes(fig)
+        yield export.fig_to_png_bytes(fig)
 
     @render.download(filename="shap_cumulative.png")
     def dl_shap_cum_png():
-        r = _shap_task.result()
+        r = _require_shap_result()
         fig = plots.plot_shap_cumulative(r["shap_df"], r["top_n"], r["cum_threshold"])
-        return export.fig_to_png_bytes(fig)
+        yield export.fig_to_png_bytes(fig)
 
     @render.download(filename="shap_all_outputs.zip")
     def dl_shap_zip():
-        r = _shap_task.result()
+        r = _require_shap_result()
         shap_df = r["shap_df"]
         sel_df = shap_df.loc[
             shap_df["cumulative_pct"] <= r["cum_threshold"], ["rank", "feature"]
@@ -403,4 +436,4 @@ def server(input, output, session):
         fig_bar = plots.plot_shap_bar_ci(shap_df, r["top_n"])
         fig_bee = plots.plot_shap_beeswarm(r["sv_full"], r["X"], top_features, r["top_n"])
         fig_cum = plots.plot_shap_cumulative(shap_df, r["top_n"], r["cum_threshold"])
-        return export.make_shap_zip(shap_df, sel_df, fig_bar, fig_bee, fig_cum)
+        yield export.make_shap_zip(shap_df, sel_df, fig_bar, fig_bee, fig_cum)
