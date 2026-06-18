@@ -35,7 +35,7 @@ pip install -r requirements.txt
 .\run.ps1
 ```
 
-瀏覽器會自動開啟 http://127.0.0.1:8000。若尚未安裝 Python，請先看下方 **Windows 安裝 Python**。
+瀏覽器會自動開啟 http://127.0.0.1:8000 。若尚未安裝 Python，請先看下方 **Windows 安裝 Python**。
 
 ---
 
