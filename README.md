@@ -16,11 +16,11 @@ KIT 風格 [Shiny for Python](https://shiny.posit.co/py/) 應用，整合 **FLAM
 
 ---
 
-## 使用：快速開始（從 GitHub 取得）
+## 使用：快速開始
 
 ### For Windows 
 
-最簡單的方法 (only for windows)
+最簡單的方法 (only for windows) 從 GitHub 取得
 
 1. 從右邊 `Releases` 位置下載 zip，到本機上解壓縮。 
 2. 進去後直接點擊 `run.bat` 執行即可。
