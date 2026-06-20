@@ -39,6 +39,14 @@ pip install -r requirements.txt
 
 2. 直接用 python 執行 (請先安裝 python)
 
+(第一次安裝使用可以不用這句。但第二次就要先寫這句進入 kitMissLGBM 資料夾才能進行。)
+
+```
+cd kitMissLGBM
+```
+
+用 python 執行這句。
+
 ```
 python app.py
 ```
